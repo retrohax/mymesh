@@ -30,7 +30,6 @@ def main():
         interface = meshtastic.serial_interface.SerialInterface(devPath=serial_device)
         print(f"Sending: {message!r}")
         interface.sendText(message)
-        time.sleep(3)  # allow radio time to transmit before closing
         print("Message sent.")
     except Exception as e:
         print(f"Error: {e}")
