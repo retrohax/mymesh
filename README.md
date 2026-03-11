@@ -43,3 +43,5 @@ Press `Ctrl+C` to stop.
 ## Device
 
 Both scripts default to `/dev/ttyUSB1`. Change the `devPath` argument in either script if your device is on a different port (e.g. `/dev/ttyUSB0` or `/dev/ttyACM0`).
+
+x
