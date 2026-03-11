@@ -26,9 +26,8 @@ def on_receive(packet, interface):
 
         if to_addr == BROADCAST_ADDR:
             print(f"[PUBLIC ch{channel}] {from_id}: {message}")
-        # uncomment to also show DMs addressed to your node:
-        # else:
-        #     print(f"[PRIVATE] {from_id} -> {hex(to_addr)}: {message}")
+        else:
+            print(f"[PRIVATE] {from_id} -> {hex(to_addr)}: {message}")
 
     except Exception as e:
         print(f"Error processing packet: {e}")

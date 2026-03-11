@@ -1,4 +1,5 @@
 import sys
+import argparse
 import time
 import json
 import os
@@ -14,22 +15,28 @@ def load_config():
         return json.load(f)
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python send_message.py <message>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Send a Meshtastic message.")
+    parser.add_argument("message", nargs="+", help="Message text to send")
+    parser.add_argument("-t", "--to", dest="destination", metavar="NODE_ID",
+                        help="Node ID to send a private message (e.g. !b03df168). Omit for public broadcast.")
+    args = parser.parse_args()
 
     config = load_config()
     if "serial_device" not in config:
         print("Error: 'serial_device' not set in config.json")
         sys.exit(1)
     serial_device = config["serial_device"]
-    message = " ".join(sys.argv[1:])
+    message = " ".join(args.message)
+    destination = args.destination or "^all"
 
     print(f"Connecting to {serial_device} ...")
     try:
         interface = meshtastic.serial_interface.SerialInterface(devPath=serial_device)
-        print(f"Sending: {message!r}")
-        interface.sendText(message)
+        if destination == "^all":
+            print(f"Sending public broadcast: {message!r}")
+        else:
+            print(f"Sending private message to {destination}: {message!r}")
+        interface.sendText(message, destinationId=destination)
         print("Message sent.")
     except Exception as e:
         print(f"Error: {e}")
