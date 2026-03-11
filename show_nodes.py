@@ -5,16 +5,13 @@ import json
 import os
 
 def load_config():
+    import sys
     config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    try:
-        with open(config_path, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print(f"Config file not found at {config_path}. Using default settings.")
-        return {}
-    except json.JSONDecodeError:
-        print(f"Error parsing config file at {config_path}. Using default settings.")
-        return {}
+    if not os.path.exists(config_path):
+        print(f"Error: config.json not found at {config_path}")
+        sys.exit(1)
+    with open(config_path) as f:
+        return json.load(f)
 
 def display_nodes(interface):
     nodes = interface.nodes
@@ -41,8 +38,12 @@ def display_nodes(interface):
 
 
 def main():
+    import sys
     config = load_config()
-    serial_device = config.get("serial_device", "/dev/ttyUSB1")
+    if "serial_device" not in config:
+        print("Error: 'serial_device' not set in config.json")
+        sys.exit(1)
+    serial_device = config["serial_device"]
     print(f"Connecting to Meshtastic device on {serial_device} ...")
     try:
         interface = meshtastic.serial_interface.SerialInterface(devPath=serial_device)

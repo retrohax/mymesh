@@ -3,15 +3,22 @@ import os
 import meshtastic
 import meshtastic.serial_interface
 
-def load_config(path=None):
-    if path is None:
-        path = os.path.join(os.path.dirname(__file__), "config.json")
+def load_config():
+    import sys
+    path = os.path.join(os.path.dirname(__file__), "config.json")
+    if not os.path.exists(path):
+        print(f"Error: config.json not found at {path}")
+        sys.exit(1)
     with open(path) as f:
         return json.load(f)
 
 def main():
+    import sys
     config = load_config()
-    serial_device = config.get("serial_device", "/dev/ttyUSB1")
+    if "serial_device" not in config:
+        print("Error: 'serial_device' not set in config.json")
+        sys.exit(1)
+    serial_device = config["serial_device"]
     print(f"Connecting to {serial_device} ...")
     try:
         interface = meshtastic.serial_interface.SerialInterface(devPath=serial_device)
