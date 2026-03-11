@@ -40,6 +40,18 @@ python listener.py
 
 Press `Ctrl+C` to stop.
 
+---
+
+### `send_message.py`
+
+Broadcasts a text message over the public mesh channel.
+
+```bash
+python send_message.py "Hello mesh!"
+```
+
+Multiple words are joined automatically; quotes are optional.
+
 ## Device
 
 Both scripts default to `/dev/ttyUSB1`. Change the `devPath` argument in either script if your device is on a different port (e.g. `/dev/ttyUSB0` or `/dev/ttyACM0`).
