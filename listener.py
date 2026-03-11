@@ -2,8 +2,16 @@ import time
 import meshtastic
 import meshtastic.serial_interface
 from pubsub import pub
+import json
+import os
 
 BROADCAST_ADDR = 0xFFFFFFFF  # "^all" — public broadcast
+
+def load_config(path=None):
+    if path is None:
+        path = os.path.join(os.path.dirname(__file__), "config.json")
+    with open(path) as f:
+        return json.load(f)
 
 def on_receive(packet, interface):
     try:
@@ -26,8 +34,10 @@ def on_receive(packet, interface):
         print(f"Error processing packet: {e}")
 
 def main():
-    print("Connecting to /dev/ttyUSB1 ...")
-    interface = meshtastic.serial_interface.SerialInterface(devPath="/dev/ttyUSB1")
+    config = load_config()
+    serial_device = config.get("serial_device", "/dev/ttyUSB1")
+    print(f"Connecting to {serial_device} ...")
+    interface = meshtastic.serial_interface.SerialInterface(devPath=serial_device)
     print("Listening for public messages... (Ctrl+C to stop)\n")
 
     pub.subscribe(on_receive, "meshtastic.receive.text")

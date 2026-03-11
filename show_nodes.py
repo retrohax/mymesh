@@ -1,6 +1,20 @@
 import meshtastic
 import meshtastic.serial_interface
 from meshtastic import mesh_pb2
+import json
+import os
+
+def load_config():
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    try:
+        with open(config_path, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"Config file not found at {config_path}. Using default settings.")
+        return {}
+    except json.JSONDecodeError:
+        print(f"Error parsing config file at {config_path}. Using default settings.")
+        return {}
 
 def display_nodes(interface):
     nodes = interface.nodes
@@ -27,9 +41,11 @@ def display_nodes(interface):
 
 
 def main():
-    print("Connecting to Meshtastic device on /dev/ttyUSB1 ...")
+    config = load_config()
+    serial_device = config.get("serial_device", "/dev/ttyUSB1")
+    print(f"Connecting to Meshtastic device on {serial_device} ...")
     try:
-        interface = meshtastic.serial_interface.SerialInterface(devPath="/dev/ttyUSB1")
+        interface = meshtastic.serial_interface.SerialInterface(devPath=serial_device)
         print("Connected.\n")
         display_nodes(interface)
     except Exception as e:
