@@ -27,7 +27,10 @@ def main():
         sys.exit(1)
     serial_device = config["serial_device"]
     message = " ".join(args.message)
-    destination = args.destination or "^all"
+    destination = "^all"
+    if args.destination:
+        # accept with or without leading !
+        destination = args.destination if args.destination.startswith("!") else f"!{args.destination}"
 
     print(f"Connecting to {serial_device} ...")
     try:
