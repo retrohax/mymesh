@@ -3,6 +3,8 @@ import meshtastic.serial_interface
 from meshtastic import mesh_pb2
 import json
 import os
+import time
+from datetime import datetime
 
 def load_config():
     import sys
@@ -30,11 +32,23 @@ def display_nodes(interface):
         long_name  = user.get("longName", "Unknown")
         short_name = user.get("shortName", "???")
         snr        = node.get("snr", "N/A")
-        last_heard = node.get("lastHeard", "N/A")
+        last_heard = node.get("lastHeard", None)
+        if isinstance(last_heard, int) and last_heard > 0:
+            age = int(time.time()) - last_heard
+            if age < 60:
+                last_heard_str = f"{age}s ago"
+            elif age < 3600:
+                last_heard_str = f"{age // 60}m ago"
+            elif age < 86400:
+                last_heard_str = f"{age // 3600}h {(age % 3600) // 60}m ago"
+            else:
+                last_heard_str = datetime.fromtimestamp(last_heard).strftime("%m/%d %H:%M")
+        else:
+            last_heard_str = "never"
         battery    = metrics.get("batteryLevel", "N/A")
         battery_str = f"{battery}%" if isinstance(battery, (int, float)) else str(battery)
 
-        print(f"{node_id:<12} {long_name:<25} {short_name:<12} {str(snr):<8} {str(last_heard):<20} {battery_str:<10}")
+        print(f"{node_id:<12} {long_name:<25} {short_name:<12} {str(snr):<8} {last_heard_str:<20} {battery_str:<10}")
 
 
 def main():

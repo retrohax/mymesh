@@ -25,6 +25,7 @@ def main():
 
         node = interface.getNode("^local")
         lora = node.localConfig.lora
+
         print("\n--- LoRa Config ---")
         print(f"  Region:       {lora.region}")
         print(f"  Modem preset: {lora.modem_preset}")
