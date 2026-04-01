@@ -41,7 +41,7 @@ from datetime import datetime
 import serial
 from Crypto.Cipher import AES
 from Crypto.Util import Counter
-from meshtastic import mesh_pb2, telemetry_pb2
+from meshtastic import mesh_pb2
 
 # ---------------------------------------------------------------------------
 # Meshtastic default channel AES-128 key (PSK index 1, "AQ==")
@@ -144,7 +144,6 @@ def decode_packet(payload: bytes) -> dict | None:
     try:
         data = mesh_pb2.Data()
         data.ParseFromString(decrypted)
-        # Reject obviously-garbage results: portnum must be a valid small integer
         if data.portnum < 0 or data.portnum > 512:
             return None
     except Exception:
@@ -158,6 +157,80 @@ def decode_packet(payload: bytes) -> dict | None:
         "portnum":   data.portnum,
         "payload":   bytes(data.payload),
     }
+
+
+def _read_varint(data: bytes, pos: int):
+    val = 0; shift = 0
+    while pos < len(data):
+        b = data[pos]; pos += 1
+        val |= (b & 0x7F) << shift
+        if not (b & 0x80):
+            return val, pos
+        shift += 7
+    return None, pos
+
+
+def _proto_iter(data: bytes):
+    """Yield (field, wire, raw_value) for each field; stops cleanly on any parse error."""
+    i = 0
+    while i < len(data):
+        tag, i = _read_varint(data, i)
+        if tag is None:
+            break
+        field, wire = tag >> 3, tag & 7
+        if wire == 0:
+            val, i = _read_varint(data, i)
+            if val is None: break
+            yield field, wire, val
+        elif wire == 1:
+            if i + 8 > len(data): break
+            val = data[i:i+8]; i += 8
+            yield field, wire, val
+        elif wire == 2:
+            llen, i = _read_varint(data, i)
+            if llen is None or i + llen > len(data): break
+            val = data[i:i+llen]; i += llen
+            yield field, wire, val
+        elif wire == 5:
+            if i + 4 > len(data): break
+            val = data[i:i+4]; i += 4
+            yield field, wire, val
+        else:
+            break  # invalid/deprecated wire type — stop cleanly
+
+
+def _decode_position_raw(raw: bytes):
+    lat_i = lon_i = 0
+    alt = None
+    for field, wire, val in _proto_iter(raw):
+        if field == 1 and wire == 5:
+            lat_i = struct.unpack('<i', val)[0]
+        elif field == 2 and wire == 5:
+            lon_i = struct.unpack('<i', val)[0]
+        elif field == 3 and wire == 0:
+            # proto int32 encodes signed values as unsigned varint; apply two's complement
+            signed = val if val < (1 << 31) else val - (1 << 32)
+            if -500 <= signed <= 9000:
+                alt = signed
+    if lat_i == 0 and lon_i == 0:
+        return None
+    return lat_i / 1e7, lon_i / 1e7, alt
+
+
+def _decode_telemetry_raw(raw: bytes):
+    batt = 0; voltage = 0.0; ch_util = 0.0; air_tx = 0.0
+    for field, wire, val in _proto_iter(raw):
+        if field == 2 and wire == 2:  # device_metrics sub-message
+            for f2, w2, v2 in _proto_iter(val):
+                if f2 == 1 and w2 == 0:
+                    batt = v2
+                elif f2 == 2 and w2 == 5:
+                    voltage = struct.unpack('<f', v2)[0]
+                elif f2 == 3 and w2 == 5:
+                    ch_util = struct.unpack('<f', v2)[0]
+                elif f2 == 4 and w2 == 5:
+                    air_tx = struct.unpack('<f', v2)[0]
+    return batt, voltage, ch_util, air_tx
 
 
 def fmt_node(node_id: int) -> str:
@@ -194,7 +267,10 @@ def main():
 
         pkt = decode_packet(payload)
         if pkt is None:
-            # Encrypted with a different key (different channel/PSK), skip silently
+            if len(payload) >= PACKET_HEADER_SIZE:
+                hdr_to, hdr_from, hdr_id, hdr_flags = struct.unpack_from("<IIII", payload, 0)
+                print(f"[?channel  {fmt_node(hdr_from)} → {fmt_node(hdr_to)}"
+                      f"  RSSI {rssi:.0f} dBm  SNR {snr:.1f} dB  {len(payload)}B]")
             continue
 
         dedup_key = (pkt["from"], pkt["packet_id"])
@@ -214,16 +290,13 @@ def main():
                 text = repr(pkt["payload"])
             print(f"{src} → {dst}  {meta}  {text}")
         elif portnum == POSITION_APP:
-            try:
-                pos = mesh_pb2.Position()
-                pos.ParseFromString(pkt["payload"])
-                lat  = pos.latitude_i  / 1e7
-                lon  = pos.longitude_i / 1e7
-                alt  = f"  alt {pos.altitude}m" if pos.altitude else ""
-                print(f"{src} → {dst}  {meta}  pos {lat:.6f},{lon:.6f}{alt}")
-            except Exception:
-                print(f"{src} → {dst}  {meta}  portnum={portnum}  "
-                      f"payload={pkt['payload'].hex()}")
+            result = _decode_position_raw(pkt["payload"])
+            if result:
+                lat, lon, alt = result
+                alt_str = f"  alt {alt}m" if alt is not None else ""
+                print(f"{src} → {dst}  {meta}  pos {lat:.6f},{lon:.6f}{alt_str}")
+            else:
+                print(f"{src} → {dst}  {meta}  pos [no fix]")
         elif portnum == NODEINFO_APP:
             try:
                 user = mesh_pb2.User()
@@ -238,19 +311,13 @@ def main():
                 print(f"{src} → {dst}  {meta}  portnum={portnum}  "
                       f"payload={pkt['payload'].hex()}")
         elif portnum == TELEMETRY_APP:
-            try:
-                tel = telemetry_pb2.Telemetry()
-                tel.ParseFromString(pkt["payload"])
-                dm = tel.device_metrics
-                parts = []
-                if dm.battery_level:       parts.append(f"batt={dm.battery_level}%")
-                if dm.voltage:             parts.append(f"{dm.voltage:.2f}V")
-                if dm.channel_utilization: parts.append(f"ch_util={dm.channel_utilization:.1f}%")
-                if dm.air_util_tx:         parts.append(f"air_tx={dm.air_util_tx:.1f}%")
-                print(f"{src} → {dst}  {meta}  telemetry {' '.join(parts) if parts else '(no device metrics)'}")
-            except Exception:
-                print(f"{src} → {dst}  {meta}  portnum={portnum}  "
-                      f"payload={pkt['payload'].hex()}")
+            batt, voltage, ch_util, air_tx = _decode_telemetry_raw(pkt["payload"])
+            parts = []
+            if batt:              parts.append(f"batt={batt}%")
+            if 0 < voltage < 30:  parts.append(f"{voltage:.2f}V")
+            if 0 < ch_util < 100: parts.append(f"ch_util={ch_util:.1f}%")
+            if 0 < air_tx < 100:  parts.append(f"air_tx={air_tx:.1f}%")
+            print(f"{src} → {dst}  {meta}  telemetry {' '.join(parts) if parts else '(empty)'}")
         elif portnum == TRACEROUTE_APP:
             try:
                 route = mesh_pb2.RouteDiscovery()
